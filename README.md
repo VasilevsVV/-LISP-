@@ -1,0 +1,2 @@
+# -LISP-
+SBCL Lisp project
