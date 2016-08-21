@@ -142,11 +142,13 @@
 		       )))))
 
       (loop
+	(dfs gr 'forward #'mid-reach #'f-out-reach #'gen-reach #'kill-reach)
 	(setf rep-flag NIL)
 	(setf visit-h (make-hash-table :test #'equal))
 	(eliminate gr)
 	(print 'LOOP)
 	(del-deadcode gr)
+	
 	(unless rep-flag
 	  (return gr)))
       
