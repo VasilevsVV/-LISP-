@@ -146,6 +146,20 @@
 (defun f-in-alive (vertex gen kill)
   (union gen (set-difference (node-out (cl-graph:element vertex)) kill :test #'equal) :test #'equal))
 
+(defun delete-assignments (gr &optional (vertex (find-vertex gr 'entry)))
+  (let ((parents (cl-graph:parent-vertexes vertex)) (childs (cl-graph:child-vertexes vertex)))
+    (let ((elem (cl-graph:element vertex)))
+      (when (and (node-p elem) (equal (node-type elem) '$stmt))
+	(let ((var (kill-alive vertex)))
+	  (print var)
+	  (unless (member (first var) (node-out elem) :test #'equal)
+	    (progn
+	      (dolist (parent parents)
+		(cl-graph:add-edge-between-vertexes gr parent (first childs)))
+	      (cl-graph:delete-vertex gr vertex))))))
+    (dolist (ver childs)
+      (delete-assignments gr ver))))
+
 
 (defun dfs (gr direction mid f-out gen kill)
   (let ((visit-h (make-hash-table :test #'equal)) (rep-flag nil))
@@ -215,21 +229,22 @@
       
       (if (equal direction 'forward)
 	  (loop
-	    
 	    (setf rep-flag NIL)
 	    (setf visit-h (make-hash-table :test #'equal))
 	    (dfs_forward gr)
 	    ;;(print rep-flag)
 	    (unless rep-flag
 	      (return gr)))
-	  
-	  (loop
-	    (setf rep-flag NIL)
-	    (setf visit-h (make-hash-table :test #'equal))
-	    (setf gr (dfs_backward gr))
-	    ;;(print rep-flag)
-	    (unless rep-flag
-	      (return gr))))
+	  (progn
+	    (loop
+	      (setf rep-flag NIL)
+	      (setf visit-h (make-hash-table :test #'equal))
+	      (setf gr (dfs_backward gr))
+	      ;;(print rep-flag)
+	      (unless rep-flag
+		(return gr)))
+	    ;;(delete-assignments gr)
+	    ))
       )))
 
 (defun test-dfa ()
@@ -267,7 +282,8 @@
   (setf cfg (build-cfg '($block ($stmt "const z := a + b;")
 			 ($if "a;" ($stmt "const z := z + 10;") ($stmt "const y := a - 20;"))
 			 ($stmt "const y := a * b;")
-			 ($stmt "const z := x;"))))
+			 ($stmt "const z := x;")
+			 ($stmt "const r := y + z - 100;"))))
   
   (dfs cfg 'backward #'mid-alive #'f-in-alive #'gen-alive #'kill-alive)
   

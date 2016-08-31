@@ -3,7 +3,7 @@
 (print (setf ex (first (second (parse "10 + 20;")))))
 
 (defun get-expr (lst)
-
+  
   ;;returns an expression from parsed
   (cond
     ((null (first lst))
@@ -177,6 +177,8 @@
 (dfs cfg 'forward #'mid-reach #'f-out-reach #'gen-reach #'kill-reach)
 
 (eliminator cfg #'rewriter)
+
+;;(dfs cfg 'backward #'mid-alive #'f-in-alive #'gen-alive #'kill-alive) 
 
 (cl-graph:graph->dot cfg "DFA-elim.dot" :edge-labeler nil :vertex-labeler
 		     (make-labeler))
