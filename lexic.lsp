@@ -40,7 +40,7 @@
 
 (defclass id-mixin ()
   ((current-id :initarg :current-id
-	       :initform 501
+	       :initform 0
 	       :reader get-id
 	       :writer set-id)))
 
@@ -71,7 +71,7 @@
 	 (res (gethash value table)))
     (if res
 	res
-	(progn (setf (gethash value table) (get-id obj))
+	(prog1 (setf (gethash value table) (get-id obj))
 	       (set-id (1+ (get-id obj)) obj)))))
 
 (defun load-tables (path)
@@ -97,8 +97,8 @@
   `(let ((*delimiters* (tables-delimiters ,tables))
 	 (*mult-delimiters* (tables-mult-delimiters ,tables))
 	 (*key-words* (tables-key-words ,tables))
-	 (*constants* (make-instance 'const-table))
-	 (*identifiers* (make-instance 'ids-table))
+	 (*constants* (make-instance 'const-table :current-id 501))
+	 (*identifiers* (make-instance 'ids-table :current-id 1001))
 	 (*errors*))
      ,@body))
 
@@ -130,7 +130,7 @@
   (and (char-not-lessp char #\a) (char-not-greaterp char #\z)))
 
 (defun get-string (lst)
-  (coerce lst 'string))
+  (coerce (reverse lst) 'string))
 
 (defparameter *stream* nil)
 
@@ -145,7 +145,7 @@
   (if (or (char= char #\.) (char= char #\:))
       (let* ((next-ch (read-char *stream* nil))
 	     (res (when next-ch
-		    (is-mult-delimiter? (coerce `(,char ,next-ch) 'string)))))
+		    (is-mult-delimiter? (get-string `(,char ,next-ch))))))
 	(if res res
 	    (if (char= char #\:)
 		(is-delimiter? char)
@@ -163,7 +163,7 @@
       ((is-delimiter? ch)
        (list
 	(read-delimiter ch)
-	(add-element *constants* (coerce (reverse lst) 'string)))))))
+	(add-element *constants* (get-string lst)))))))
 
 (defun read-identifier (lst)
   (let ((ch (read-char *stream* nil)))
@@ -175,7 +175,7 @@
       ((is-delimiter? ch)
        (list
 	(read-delimiter ch)
-	(add-element *identifiers* (coerce ())))))))
+	(add-element *identifiers* (get-string lst)))))))
 
 (defun char-reader ()
   (labels ((%char-reader (&optional lst line col)
@@ -195,7 +195,8 @@
 		      (%char-reader (multi-cons (read-delimiter ch) lst)
 				    line (1+ col)))
 		     ((is-leter? ch)
-		      (%char-reader lst line (1+ col)))
+		      (%char-reader (multi-cons (read-identifier `(,ch)) lst)
+				    line (1+ col)))
 		     (T (error "Invalid character in:~%line: ~A ; column: ~A~%"
 			       line col)))
 		   (progn
