@@ -116,6 +116,15 @@
   (set-line line obj)
   (set-colunm column obj))
 
+(defclass line ()
+  ((line :initarg :line
+	 :initform ""
+	 :reader line
+	 :writer set-line)))
+
+(defgeneric push-back (obj &rest chars))
+(defmethod push-back ((obj line) &rest chars)
+  (set-line (concatenate 'string (line obj) chars) obj))
 ;;CLASSES-------------------------------------------
 
 ;;WITH-MACROSES+++++++++++++++++++++++++++++++++++++
@@ -127,6 +136,7 @@
 (defparameter *identifiers* nil)
 (defparameter *errors* nil)
 (defparameter *position* nil)
+(defparameter *line* nil)
 
 (defmacro with-lexer-tables ((tables) &body body)
   `(let ((*delimiters* (tables-delimiters ,tables))
@@ -135,7 +145,8 @@
 	 (*constants* (make-instance 'const-table :current-id 501))
 	 (*identifiers* (make-instance 'ids-table :current-id 1001))
 	 (*errors* (make-hash-table))
-	 (*position* (make-instance 'char-position)))
+	 (*position* (make-instance 'char-position))
+	 (*line* (make-instance 'line)))
      ,@body))
 
 (defmacro with-lexing (&body body)
@@ -146,12 +157,27 @@
 
 ;;HELPERS+++++++++++++++++++++++++++++++++++++++++++
 
+;; (defun multi-cons (lst1 lst2)
+;;   (if lst1
+;;       (if (listp lst1)
+;; 	  (cons (first lst1) (multi-cons (rest lst1) lst2))
+;; 	  (cons lst1 lst2))
+;;       lst2))
+
 (defun multi-cons (lst1 lst2)
-  (if lst1
-      (if (listp lst1)
-	  (cons (first lst1) (multi-cons (rest lst1) lst2))
-	  (cons lst1 lst2))
-      lst2))
+  (labels ((%get-list (lst)
+	     (when lst
+	       (let ((f (first lst)))
+		 (if (listp f)
+		     (append (%get-list f) (%get-list (rest lst)))
+		     (cons f (%get-list (rest lst)))))))
+	   (%multi-cons (lst)
+	     (if lst
+		 (cons (first lst) (%multi-cons (rest lst)))
+		 lst2)))
+    (if (listp lst1)
+	(%multi-cons (%get-list lst1))
+	(cons lst1 lst2))))
 
 (defun is-ws? (char)
   (char<= char #\space))
@@ -168,6 +194,9 @@
 (defun is-leter? (char)
   (and (char-not-lessp char #\a) (char-not-greaterp char #\z)))
 
+(defun is-newline? (char)
+  (char= char #\newline))
+
 (defun get-string (lst)
   (string-upcase (coerce (reverse lst) 'string)))
 
@@ -176,6 +205,41 @@
     (if res
 	res
 	(add-element *identifiers* str))))
+
+;; (defun push-back (str &rest char)
+;;   (concatenate 'string str char))
+
+(defun make-pointer (pos &optional lst)
+  (if (<= pos 1)
+      (coerce (reverse (cons #\^ lst)) 'string)
+      (make-pointer (1- pos) (cons #\space lst))))
+
+(defun throw-error (message line stream pos)
+  (error "~A~%at line: ~A~%~A~A~%~A"
+	 message (line pos) line (read-line stream)
+	 (make-pointer (column pos))))
+
+(defun inc-line (&rest chars)
+  (print chars)
+  (incn *position* (length chars))
+  (eval `(push-back *line* ,@chars)))
+
+(defun reset-line ()
+  (new-line *position*)
+  (set-line "" *line*))
+
+(defun read-something (char)
+  (cond
+    ((is-newline? char)
+     (reset-line))
+    ((is-ws? char)
+     (inc-line char))
+    ((is-delimiter? char)
+     (read-delimiter char))
+    ((is-number? char)
+     (read-number char))
+    ((is-leter? char)
+     (read-identifier char))))
 
 ;;HELPERS------------------------------------------
 
@@ -187,22 +251,26 @@
       (let* ((next-ch (read-char *stream* nil))
 	     (res (when next-ch
 		    (is-mult-delimiter? (get-string `(,char ,next-ch))))))
-	(if res (progn (inc *position*) res)
+	(if res
+	    (progn (inc-line char next-ch) res)
 	    (if (char= char #\:)
-		(progn (incn *position* 2) (is-delimiter? char))
+		(prog2
+		  (inc-line char)
+		  (list (is-delimiter? char) (read-something char)))
 		(error "Unnown shit!~%"))))
       (progn
-	(inc *position*)
+	(inc-line char)
 	(gethash char *delimiters*))))
 
 (defun read-number (lst)
   (let ((ch (read-char *stream* nil)))
     (cond
       ((is-number? ch)
-       (inc *position*)
+       (print ch)
+       (inc-line ch)
        (read-number (cons ch lst)))
       ((or (null ch) (is-ws? ch))
-       (inc *position*)
+       (inc-line ch)
        (add-element *constants*
 		    (coerce (reverse lst) 'string)))
       ((is-delimiter? ch)
@@ -214,10 +282,10 @@
   (let ((ch (read-char *stream* nil)))
     (cond
       ((or (is-number? ch) (is-leter? ch))
-       (inc *position*)
+       (inc-line ch)
        (read-identifier (cons ch lst)))
       ((or (null ch) (is-ws? ch))
-       (inc *position*)
+       (inc-line ch)
        (add-identifier (get-string lst)))
       ((is-delimiter? ch)
        (list
@@ -225,29 +293,37 @@
 	(add-identifier (get-string lst)))))))
 
 (defun char-reader ()
-  (labels ((%char-reader (&optional lst)
+  (labels ((%char-reader (lst)
 	     (let ((ch (read-char *stream* nil)))
-	       ;;(format T "~A~%" ch)
 	       (if ch
 		   (cond
 		     ((char= ch #\newline)
 		      (new-line *position*)
+		      (set-line "" *line*)
 		      (%char-reader lst))
 		     ((char<= ch #\space)
-		      (inc *position*)
+		      ;;(inc *position*)
+		      (inc-line ch)
+		      ;;(push-back *line* ch)
 		      (%char-reader lst))
 		     ((is-number? ch)
 		      (format T "=> ~A :: ~A~%" ch (column *position*))
-		      (inc *position*)
+		      ;;(inc *position*)
+		      ;;(push-back *line* ch)
+		      (inc-line ch)
 		      (%char-reader (multi-cons (read-number `(,ch)) lst)))
 		     ((is-delimiter? ch)
+		      ;;(push-back *line* ch)
 		      (%char-reader (multi-cons (read-delimiter ch) lst)))
 		     ((is-leter? ch)
 		      (format T "==> ~A :: ~A~%" ch (column *position*))
-		      (inc *position*)
+		      ;;(inc *position*)
+		      ;;(push-back *line* ch)
+		      (inc-line ch)
 		      (%char-reader (multi-cons (read-identifier `(,ch)) lst)))
-		     (T (error "Invalid character in:~%line: ~A ; column: ~A~%"
-			     (line *position*) (column *position*))))
+		     (T
+		      (push-back *line* ch)
+		      (throw-error "Invalid character" (line *line*) *stream* *position*)))
 		   (progn
 		     (format T "~A~%~A~%~A~%"
 			     (table *constants*)
