@@ -1,0 +1,21 @@
+program prog;
+const
+a := 150;
+b := [10..20,50..60];
+f := 150#+12;
+
+var
+var1 : float;
+var2 : integer;
+var3, var4, var5: float,signal,[10..20];
+(* Comments *)
+
+begin
+a := f * b;
+loop
+endloop
+
+for 1 to 150 do endfor;
+
+end 
+(*Some new comments *)
