@@ -53,7 +53,7 @@
 
 (defun throw-error (message line stream pos)
   (error "~A~%at line: ~A~%\"~A~A\"~% ~A"
-	 message (line pos) line (read-line stream)
+	 message (line pos) line (read-line stream nil)
 	 (make-pointer (column pos))))
 
 (defun get-string (lst)
@@ -74,3 +74,29 @@
 	       (setf (gethash v res-hash) k))
 	     table)
     res-hash))
+
+(defun print-hash-line (stream key val)
+  (format stream "~4T~A  ->  ~A~%" key val))
+
+(defgeneric dump-lexic-result (res))
+(defmethod dump-lexic-result ((res lexical-result))
+  (with-open-file (stream "lexic-result.txt" :direction :output
+					     :if-exists :supersede
+					     :if-does-not-exist :create)
+    (format stream "DELIMITERS:~%")
+    (maphash (lambda (k v) (print-hash-line stream k v))
+	     (lexical-result-delimiters res))
+    (format stream "~%MULT-DELIMITERS:~%")
+    (maphash (lambda (k v) (print-hash-line stream k v))
+	     (lexical-result-mult-delimiters res))
+    (format stream "~%KEYWORDS:~%")
+    (maphash (lambda (k v) (print-hash-line stream k v))
+	     (lexical-result-key-words res))
+    (format stream "~%CONSTANTS:~%")
+    (maphash (lambda (k v) (print-hash-line stream k v))
+	     (lexical-result-constants res))
+    (format stream "~%IDENTIFIERS:~%")
+    (maphash (lambda (k v) (print-hash-line stream k v))
+	     (lexical-result-identifiers res))
+    (format stream "~%LIST OF LEXEMS:~%~{~A~^,~^ ~}."
+	    (lexical-result-coded-list res))))

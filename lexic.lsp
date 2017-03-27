@@ -48,6 +48,9 @@
 (defun is-newline? (char)
   (char= char #\newline))
 
+(defun is-comment? (char)
+  (char= char #\())
+
 (defun add-identifier (str)
   (let ((res (gethash str *key-words*)))
     (if res
@@ -59,9 +62,11 @@
 (defun read-something (char)
   (cond
     ((is-newline? char)
-     (reset-line))
+     (reset-line)
+     nil)
     ((is-ws? char)
-     (inc-line char))
+     (inc-line char)
+     nil)
     ((is-delimiter? char)
      (read-delimiter char))
     ((is-number? char)
@@ -83,7 +88,7 @@
 	    (if (char= char #\:)
 		(prog2
 		  (inc-line char)
-		  (list (is-delimiter? char) (read-something next-ch)))
+		    (list (is-delimiter? char) (read-something next-ch)))
 		(error "Unnown shit!~%"))))
       (progn
 	(inc-line char)
@@ -129,11 +134,47 @@
        (throw-error "Invalid identifier" (push-back *line* ch)
 		    *stream* *position*)))))
 
+(defun read-comment ()
+  (labels ((%comment ()
+	     (let ((ch (read-char *stream* nil)))
+	       ;;(inc-line ch)
+	       (cond
+		 ((null ch)
+		  (throw-error "Unmatched comment parenthis"
+			       (line *line*) *stream* *position*))
+		 ((is-newline? ch)
+		  (reset-line)
+		  (%comment))
+		 ((char= ch #\*)
+		  (inc-line ch)
+		  (let ((ch1 (read-char *stream* nil)))
+		    (inc-line ch1)
+		    (cond ((null ch1)
+			   (throw-error "Unmatched comment parenthis"
+					(push-back *line* ch) *stream* *position*))
+			  ((char= ch1 #\))
+			   T)
+			  (T (%comment)))))
+		 (T (inc-line ch) (%comment))))))
+    (let ((ch (read-char *stream* nil)))
+      (cond
+	((null ch)
+	 (throw-error "Invalid symbol" (line *line*) *stream* *position*))
+	((char= ch #\*)
+	 (inc-line ch)
+	 (%comment))
+	(T
+	 (throw-error "Invalid symbol" (line *line*) *stream* *position*))))))
+
 (defun char-reader ()
   (labels ((%char-reader (lst)
 	     (let ((ch (read-char *stream* nil)))
 	       (if ch
 		   (cond
+		     ((is-comment? ch)
+		      (inc-line ch)
+		      (read-comment)
+		      (%char-reader lst))
 		     ((char= ch #\newline)
 		      (reset-line)
 		      (%char-reader lst))
@@ -150,11 +191,7 @@
 		      (%char-reader (multi-cons (read-identifier `(,ch)) lst)))
 		     (T
 		      (throw-error "Invalid character" (push-back *line* ch) *stream* *position*)))
-		   (progn
-		     (format T "~A~%~A~%"
-			     (table *constants*)
-			     (table *identifiers*))
-		     (reverse lst))))))
+		   (reverse lst)))))
     (%char-reader nil)))
 
 (defun lexical-analyze (pathname)
